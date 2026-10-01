@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sensor 4-20 mA &middot; Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root { --bg:#0f172a; --card:#1e293b; --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; }
   * { box-sizing: border-box; }
@@ -23,12 +24,25 @@
   .chart-wrap { background: var(--card); border-radius:14px; padding:18px; border:1px solid #334155; }
   canvas { width:100% !important; }
   .sub { color: var(--muted); font-size:13px; margin-top:8px; }
+  .btn { background: var(--accent); color:#04121f; border:0; border-radius:10px; padding:10px 16px; font-weight:600; cursor:pointer; font-size:14px; }
+  .btn:hover { filter:brightness(1.1); }
+  .btn:disabled { opacity:.6; cursor:default; }
+  .table-wrap { background: var(--card); border-radius:14px; padding:18px; border:1px solid #334155; margin-top:20px; }
+  .table-wrap h2 { font-size:14px; margin:0 0 12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; }
+  .table-scroll { max-height:420px; overflow:auto; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { padding:8px 10px; text-align:right; border-bottom:1px solid #33415555; white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; }
+  thead th { position:sticky; top:0; background:var(--card); color:var(--muted); z-index:1; }
 </style>
 </head>
 <body>
 <header>
   <h1>Sensor 4-20 mA &middot; Generador</h1>
-  <div class="status"><span id="dot" class="dot"></span><span id="st">conectando&hellip;</span></div>
+  <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
+    <div class="status"><span id="dot" class="dot"></span><span id="st">conectando&hellip;</span></div>
+    <button id="btnExport" class="btn">Exportar Excel</button>
+  </div>
 </header>
 <main>
   <div class="cards">
@@ -40,6 +54,18 @@
   <div class="chart-wrap">
     <canvas id="chart" height="120"></canvas>
     <div class="sub" id="upd">Sin datos todav&iacute;a.</div>
+  </div>
+
+  <div class="table-wrap">
+    <h2>Registros <span id="cnt" class="sub"></span></h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Fecha y hora</th><th>Valor</th><th>Corriente (mA)</th><th>%</th><th>Voltaje (V)</th><th>Muestras</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
   </div>
 </main>
 
@@ -97,6 +123,22 @@ onValue(ref(db, "sensor/latest"), (snap) => {
 });
 
 const seen = {};
+const renderTable = (rows) => {
+  const tb = $("tbody");
+  tb.innerHTML = "";
+  rows.slice().reverse().forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>" + new Date(r.ts).toLocaleString() + "</td>" +
+      "<td>" + Number(r.valor).toFixed(2) + " " + (r.unit || "") + "</td>" +
+      "<td>" + Number(r.ma).toFixed(2) + "</td>" +
+      "<td>" + Number(r.pct).toFixed(1) + "</td>" +
+      "<td>" + Number(r.v).toFixed(3) + "</td>" +
+      "<td>" + (r.n != null ? r.n : "") + "</td>";
+    tb.appendChild(tr);
+  });
+  $("cnt").textContent = rows.length ? "(" + rows.length + " \u00faltimos)" : "";
+};
+
 onValue(query(ref(db, "history"), limitToLast(120)), (snap) => {
   snap.forEach((child) => { seen[child.key] = child.val(); });
   const rows = Object.values(seen).sort((a, b) => a.ts - b.ts).slice(-120);
@@ -104,6 +146,38 @@ onValue(query(ref(db, "history"), limitToLast(120)), (snap) => {
   chart.data.datasets[0].data = rows.map((r) => r.valor);
   chart.data.datasets[1].data = rows.map((r) => r.ma);
   chart.update();
+  renderTable(rows);
+});
+
+$("btnExport").addEventListener("click", async () => {
+  const btn = $("btnExport");
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = "Exportando\u2026";
+  try {
+    const res = await fetch(firebaseConfig.databaseURL + "/history.json");
+    const data = (await res.json()) || {};
+    const rows = Object.values(data).sort((a, b) => a.ts - b.ts);
+    if (!rows.length) { alert("Todav\u00eda no hay registros."); return; }
+    const aoa = rows.map((r) => ({
+      "Fecha y hora": new Date(r.ts).toLocaleString(),
+      "Valor": r.valor,
+      "Unidad": r.unit || "",
+      "Corriente (mA)": r.ma,
+      "Porcentaje (%)": r.pct,
+      "Voltaje ADC (V)": r.v,
+      "Muestras": r.n,
+      "Timestamp (ms)": r.ts
+    }));
+    const ws = XLSX.utils.json_to_sheet(aoa);
+    ws["!cols"] = [{wch:20},{wch:10},{wch:8},{wch:14},{wch:14},{wch:14},{wch:10},{wch:15}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Registros");
+    XLSX.writeFile(wb, "sensor_registros.xlsx");
+  } catch (e) {
+    alert("Error al exportar: " + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
 });
 </script>
 </body>
