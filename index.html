@@ -48,8 +48,13 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebas
 import { getDatabase, ref, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
 
 const firebaseConfig = {
+  apiKey: "AIzaSyApWW1rvqDy_eUsxbYtEMu3zYRjZmxI-bo",
+  authDomain: "sensoresdegenerador.firebaseapp.com",
   databaseURL: "https://sensoresdegenerador-default-rtdb.firebaseio.com",
-  projectId: "sensoresdegenerador"
+  projectId: "sensoresdegenerador",
+  storageBucket: "sensoresdegenerador.firebasestorage.app",
+  messagingSenderId: "1009024953926",
+  appId: "1:1009024953926:web:b5b2c1abb274b8403a2447"
 };
 
 const app = initializeApp(firebaseConfig);
