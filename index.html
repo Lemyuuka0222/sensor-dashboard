@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sensor 4-20 mA &middot; Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root { --bg:#0f172a; --card:#1e293b; --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--txt); }
+  header { padding: 18px 24px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #334155; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size: 20px; margin:0; font-weight:600; }
+  .status { font-size: 13px; color: var(--muted); }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:50%; background:#64748b; margin-right:6px; vertical-align:middle; }
+  .dot.on { background: var(--ok); box-shadow:0 0 8px var(--ok); }
+  main { max-width: 1100px; margin:0 auto; padding: 20px; }
+  .cards { display:grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin-bottom:20px; }
+  .card { background: var(--card); border-radius:14px; padding:18px; border:1px solid #334155; }
+  .card .label { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
+  .card .value { font-size:38px; font-weight:700; margin-top:6px; }
+  .card .unit { font-size:16px; color:var(--muted); margin-left:4px; }
+  .chart-wrap { background: var(--card); border-radius:14px; padding:18px; border:1px solid #334155; }
+  canvas { width:100% !important; }
+  .sub { color: var(--muted); font-size:13px; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sensor 4-20 mA &middot; Generador</h1>
+  <div class="status"><span id="dot" class="dot"></span><span id="st">conectando&hellip;</span></div>
+</header>
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">Valor</div><div class="value"><span id="valor">--</span><span class="unit" id="unit"></span></div></div>
+    <div class="card"><div class="label">Corriente</div><div class="value"><span id="ma">--</span><span class="unit">mA</span></div></div>
+    <div class="card"><div class="label">Porcentaje</div><div class="value"><span id="pct">--</span><span class="unit">%</span></div></div>
+    <div class="card"><div class="label">Voltaje ADC</div><div class="value"><span id="v">--</span><span class="unit">V</span></div></div>
+  </div>
+  <div class="chart-wrap">
+    <canvas id="chart" height="120"></canvas>
+    <div class="sub" id="upd">Sin datos todav&iacute;a.</div>
+  </div>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+import { getDatabase, ref, onValue, query, limitToLast } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js";
+
+const firebaseConfig = {
+  databaseURL: "https://sensoresdegenerador-default-rtdb.firebaseio.com",
+  projectId: "sensoresdegenerador"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const $ = (id) => document.getElementById(id);
+const dot = $("dot"), st = $("st");
+
+const chart = new Chart($("chart").getContext("2d"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "Valor", data: [], borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.15)", fill: true, tension: .3, pointRadius: 0, yAxisID: "y" },
+    { label: "Corriente (mA)", data: [], borderColor: "#f59e0b", borderDash: [5, 4], tension: .3, pointRadius: 0, yAxisID: "y1" }
+  ]},
+  options: {
+    responsive: true, animation: false,
+    interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: "#e2e8f0" } } },
+    scales: {
+      x: { ticks: { color: "#94a3b8", maxTicksLimit: 8 }, grid: { color: "#33415555" } },
+      y: { position: "left", ticks: { color: "#94a3b8" }, grid: { color: "#33415555" }, title: { display: true, text: "Valor", color: "#94a3b8" } },
+      y1: { position: "right", ticks: { color: "#f59e0b" }, grid: { drawOnChartArea: false }, title: { display: true, text: "mA", color: "#f59e0b" } }
+    }
+  }
+});
+
+const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
+
+onValue(ref(db, "sensor/latest"), (snap) => {
+  const d = snap.val();
+  if (!d) return;
+  $("valor").textContent = Number(d.valor).toFixed(2);
+  $("unit").textContent = d.unit || "";
+  $("ma").textContent = Number(d.ma).toFixed(2);
+  $("pct").textContent = Number(d.pct).toFixed(1);
+  $("v").textContent = Number(d.v).toFixed(3);
+  dot.classList.add("on");
+  const secs = Math.round((Date.now() - d.ts) / 1000);
+  st.textContent = "en vivo \u00b7 actualizado hace " + secs + " s";
+  $("upd").textContent = "\u00daltima lectura: " + new Date(d.ts).toLocaleString();
+});
+
+const seen = {};
+onValue(query(ref(db, "history"), limitToLast(120)), (snap) => {
+  snap.forEach((child) => { seen[child.key] = child.val(); });
+  const rows = Object.values(seen).sort((a, b) => a.ts - b.ts).slice(-120);
+  chart.data.labels = rows.map((r) => fmtTime(r.ts));
+  chart.data.datasets[0].data = rows.map((r) => r.valor);
+  chart.data.datasets[1].data = rows.map((r) => r.ma);
+  chart.update();
+});
+</script>
+</body>
+</html>
