@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sensor 4-20 mA &middot; Dashboard</title>
+<title>Temperatura &middot; Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
-  :root { --bg:#0f172a; --card:#1e293b; --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; }
+  :root { --bg:#0f172a; --card:#1e293b; --txt:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --temp:#22c55e; }
   * { box-sizing: border-box; }
   body { margin:0; font-family: system-ui, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--txt); }
   header { padding: 18px 24px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #334155; gap:12px; flex-wrap:wrap; }
@@ -21,6 +21,7 @@
   .card .label { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
   .card .value { font-size:38px; font-weight:700; margin-top:6px; }
   .card .unit { font-size:16px; color:var(--muted); margin-left:4px; }
+  .card.hero .value { font-size:52px; color: var(--temp); }
   .chart-wrap { background: var(--card); border-radius:14px; padding:18px; border:1px solid #334155; }
   canvas { width:100% !important; }
   .sub { color: var(--muted); font-size:13px; margin-top:8px; }
@@ -38,7 +39,7 @@
 </head>
 <body>
 <header>
-  <h1>Sensor 4-20 mA &middot; Generador</h1>
+  <h1>Temperatura &middot; Generador</h1>
   <div style="display:flex; align-items:center; gap:14px; flex-wrap:wrap;">
     <div class="status"><span id="dot" class="dot"></span><span id="st">conectando&hellip;</span></div>
     <button id="btnExport" class="btn">Exportar Excel</button>
@@ -46,11 +47,9 @@
 </header>
 <main>
   <div class="cards">
-    <div class="card"><div class="label">Valor</div><div class="value"><span id="valor">--</span><span class="unit" id="unit"></span></div></div>
-    <div class="card"><div class="label">Corriente</div><div class="value"><span id="ma">--</span><span class="unit">mA</span></div></div>
-    <div class="card"><div class="label">Porcentaje</div><div class="value"><span id="pct">--</span><span class="unit">%</span></div></div>
-    <div class="card"><div class="label">Voltaje ADC</div><div class="value"><span id="v">--</span><span class="unit">V</span></div></div>
-    <div class="card"><div class="label">Temperatura</div><div class="value"><span id="temp">--</span><span class="unit">&deg;C</span></div></div>
+    <div class="card hero"><div class="label">Temperatura actual</div><div class="value"><span id="temp">--</span><span class="unit">&deg;C</span></div></div>
+    <div class="card"><div class="label">M&iacute;nima</div><div class="value"><span id="tmin">--</span><span class="unit">&deg;C</span></div></div>
+    <div class="card"><div class="label">M&aacute;xima</div><div class="value"><span id="tmax">--</span><span class="unit">&deg;C</span></div></div>
   </div>
   <div class="chart-wrap">
     <canvas id="chart" height="120"></canvas>
@@ -62,7 +61,7 @@
     <div class="table-scroll">
       <table>
         <thead><tr>
-          <th>Fecha y hora</th><th>Valor</th><th>Corriente (mA)</th><th>%</th><th>Voltaje (V)</th><th>Temp (&deg;C)</th><th>Muestras</th>
+          <th>Fecha y hora</th><th>Temperatura (&deg;C)</th>
         </tr></thead>
         <tbody id="tbody"></tbody>
       </table>
@@ -89,12 +88,13 @@ const db = getDatabase(app);
 const $ = (id) => document.getElementById(id);
 const dot = $("dot"), st = $("st");
 
+const valid = (t) => (t != null && Number(t) > -100);
+const showT = (t) => valid(t) ? Number(t).toFixed(2) : "--";
+
 const chart = new Chart($("chart").getContext("2d"), {
   type: "line",
   data: { labels: [], datasets: [
-    { label: "Valor", data: [], borderColor: "#38bdf8", backgroundColor: "rgba(56,189,248,.15)", fill: true, tension: .3, pointRadius: 0, yAxisID: "y" },
-    { label: "Corriente (mA)", data: [], borderColor: "#f59e0b", borderDash: [5, 4], tension: .3, pointRadius: 0, yAxisID: "y1" },
-    { label: "Temperatura (\u00b0C)", data: [], borderColor: "#22c55e", tension: .3, pointRadius: 0, yAxisID: "y2" }
+    { label: "Temperatura (\u00b0C)", data: [], borderColor: "#22c55e", backgroundColor: "rgba(34,197,94,.15)", fill: true, tension: .3, pointRadius: 0, yAxisID: "y" }
   ]},
   options: {
     responsive: true, animation: false,
@@ -102,24 +102,17 @@ const chart = new Chart($("chart").getContext("2d"), {
     plugins: { legend: { labels: { color: "#e2e8f0" } } },
     scales: {
       x: { ticks: { color: "#94a3b8", maxTicksLimit: 8 }, grid: { color: "#33415555" } },
-      y: { position: "left", ticks: { color: "#94a3b8" }, grid: { color: "#33415555" }, title: { display: true, text: "Valor", color: "#94a3b8" } },
-      y1: { position: "right", ticks: { color: "#f59e0b" }, grid: { drawOnChartArea: false }, title: { display: true, text: "mA", color: "#f59e0b" } },
-      y2: { position: "right", offset: true, ticks: { color: "#22c55e" }, grid: { drawOnChartArea: false }, title: { display: true, text: "\u00b0C", color: "#22c55e" } }
+      y: { position: "left", ticks: { color: "#22c55e" }, grid: { color: "#33415555" }, title: { display: true, text: "\u00b0C", color: "#22c55e" } }
     }
   }
 });
 
 const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
 
-onValue(ref(db, "sensor/latest"), (snap) => {
+onValue(ref(db, "temperatura/latest"), (snap) => {
   const d = snap.val();
   if (!d) return;
-  $("valor").textContent = Number(d.valor).toFixed(2);
-  $("unit").textContent = d.unit || "";
-  $("ma").textContent = Number(d.ma).toFixed(2);
-  $("pct").textContent = Number(d.pct).toFixed(1);
-  $("v").textContent = Number(d.v).toFixed(3);
-  $("temp").textContent = (d.temp != null) ? Number(d.temp).toFixed(2) : "--";
+  $("temp").textContent = showT(d.temp);
   dot.classList.add("on");
   const secs = Math.round((Date.now() - d.ts) / 1000);
   st.textContent = "en vivo \u00b7 actualizado hace " + secs + " s";
@@ -133,24 +126,20 @@ const renderTable = (rows) => {
   rows.slice().reverse().forEach((r) => {
     const tr = document.createElement("tr");
     tr.innerHTML = "<td>" + new Date(r.ts).toLocaleString() + "</td>" +
-      "<td>" + Number(r.valor).toFixed(2) + " " + (r.unit || "") + "</td>" +
-      "<td>" + Number(r.ma).toFixed(2) + "</td>" +
-      "<td>" + Number(r.pct).toFixed(1) + "</td>" +
-      "<td>" + Number(r.v).toFixed(3) + "</td>" +
-      "<td>" + (r.temp != null ? Number(r.temp).toFixed(2) : "--") + "</td>" +
-      "<td>" + (r.n != null ? r.n : "") + "</td>";
+      "<td>" + showT(r.temp) + "</td>";
     tb.appendChild(tr);
   });
+  const vals = rows.map((r) => Number(r.temp)).filter(valid);
+  $("tmin").textContent = vals.length ? Math.min(...vals).toFixed(2) : "--";
+  $("tmax").textContent = vals.length ? Math.max(...vals).toFixed(2) : "--";
   $("cnt").textContent = rows.length ? "(" + rows.length + " \u00faltimos)" : "";
 };
 
-onValue(query(ref(db, "history"), limitToLast(120)), (snap) => {
+onValue(query(ref(db, "temperatura/history"), limitToLast(120)), (snap) => {
   snap.forEach((child) => { seen[child.key] = child.val(); });
   const rows = Object.values(seen).sort((a, b) => a.ts - b.ts).slice(-120);
   chart.data.labels = rows.map((r) => fmtTime(r.ts));
-  chart.data.datasets[0].data = rows.map((r) => r.valor);
-  chart.data.datasets[1].data = rows.map((r) => r.ma);
-  chart.data.datasets[2].data = rows.map((r) => (r.temp != null ? r.temp : null));
+  chart.data.datasets[0].data = rows.map((r) => valid(r.temp) ? Number(r.temp) : null);
   chart.update();
   renderTable(rows);
 });
@@ -160,26 +149,20 @@ $("btnExport").addEventListener("click", async () => {
   const old = btn.textContent;
   btn.disabled = true; btn.textContent = "Exportando\u2026";
   try {
-    const res = await fetch(firebaseConfig.databaseURL + "/history.json");
+    const res = await fetch(firebaseConfig.databaseURL + "/temperatura/history.json");
     const data = (await res.json()) || {};
     const rows = Object.values(data).sort((a, b) => a.ts - b.ts);
     if (!rows.length) { alert("Todav\u00eda no hay registros."); return; }
     const aoa = rows.map((r) => ({
       "Fecha y hora": new Date(r.ts).toLocaleString(),
-      "Valor": r.valor,
-      "Unidad": r.unit || "",
-      "Corriente (mA)": r.ma,
-      "Porcentaje (%)": r.pct,
-      "Voltaje ADC (V)": r.v,
-      "Temperatura (\u00b0C)": (r.temp != null ? r.temp : ""),
-      "Muestras": r.n,
+      "Temperatura (\u00b0C)": valid(r.temp) ? Number(r.temp) : "",
       "Timestamp (ms)": r.ts
     }));
     const ws = XLSX.utils.json_to_sheet(aoa);
-    ws["!cols"] = [{wch:20},{wch:10},{wch:8},{wch:14},{wch:14},{wch:14},{wch:16},{wch:10},{wch:15}];
+    ws["!cols"] = [{wch:20},{wch:16},{wch:15}];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Registros");
-    XLSX.writeFile(wb, "sensor_registros.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Temperatura");
+    XLSX.writeFile(wb, "temperatura_registros.xlsx");
   } catch (e) {
     alert("Error al exportar: " + e.message);
   } finally {
