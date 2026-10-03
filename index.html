@@ -87,6 +87,7 @@ const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 const $ = (id) => document.getElementById(id);
 const dot = $("dot"), st = $("st");
+const TZ = "America/Tegucigalpa";
 
 const valid = (t) => (t != null && Number(t) > -100);
 const showT = (t) => valid(t) ? Number(t).toFixed(2) : "--";
@@ -107,7 +108,7 @@ const chart = new Chart($("chart").getContext("2d"), {
   }
 });
 
-const fmtTime = (ts) => new Date(ts).toLocaleTimeString();
+const fmtTime = (ts) => new Date(ts).toLocaleTimeString("es-HN", { timeZone: TZ });
 
 onValue(ref(db, "temperatura/latest"), (snap) => {
   const d = snap.val();
@@ -116,7 +117,7 @@ onValue(ref(db, "temperatura/latest"), (snap) => {
   dot.classList.add("on");
   const secs = Math.round((Date.now() - d.ts) / 1000);
   st.textContent = "en vivo \u00b7 actualizado hace " + secs + " s";
-  $("upd").textContent = "\u00daltima lectura: " + new Date(d.ts).toLocaleString();
+  $("upd").textContent = "\u00daltima lectura: " + new Date(d.ts).toLocaleString("es-HN", { timeZone: TZ });
 });
 
 const seen = {};
@@ -125,7 +126,7 @@ const renderTable = (rows) => {
   tb.innerHTML = "";
   rows.slice().reverse().forEach((r) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = "<td>" + new Date(r.ts).toLocaleString() + "</td>" +
+    tr.innerHTML = "<td>" + new Date(r.ts).toLocaleString("es-HN", { timeZone: TZ }) + "</td>" +
       "<td>" + showT(r.temp) + "</td>";
     tb.appendChild(tr);
   });
@@ -154,7 +155,7 @@ $("btnExport").addEventListener("click", async () => {
     const rows = Object.values(data).sort((a, b) => a.ts - b.ts);
     if (!rows.length) { alert("Todav\u00eda no hay registros."); return; }
     const aoa = rows.map((r) => ({
-      "Fecha y hora": new Date(r.ts).toLocaleString(),
+      "Fecha y hora": new Date(r.ts).toLocaleString("es-HN", { timeZone: TZ }),
       "Temperatura (\u00b0C)": valid(r.temp) ? Number(r.temp) : "",
       "Timestamp (ms)": r.ts
     }));
